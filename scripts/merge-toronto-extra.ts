@@ -52,7 +52,15 @@ seg('tor:ferry-city', 'tor:ferry-centre', ['f-centre']);
 seg('tor:ferry-city', 'tor:ferry-hanlans', ['f-hanlans']);
 seg('tor:bb-city', 'tor:bb-airport', ['f-bb']);
 seg('tor:up-union', 'tor:up-bloor', ['up']);
-seg('tor:up-bloor', 'tor:up-weston', ['up']);
+// Bloor -> Weston traces the Kitchener corridor THROUGH Mount Dennis (GO station MD, 43.68749,
+// -79.48703). UP does not stop at Mount Dennis, so this is a shape-only waypoint — no station, no
+// timetable leg — the train simply passes through it. Curve points are verbatim GO shape UNMO points.
+seg('tor:up-bloor', 'tor:up-weston', ['up'], [
+  [-79.46162, 43.66883], // UNMO seq 57
+  [-79.47449, 43.68071], // UNMO seq 66
+  [-79.48703, 43.68749], // Mount Dennis GO station (pass-through, not a UP stop)
+  [-79.50123, 43.69429], // UNMO seq 83
+]);
 // UP Express follows the Kitchener corridor northwest from Weston and turns south ONLY at Hwy 427
 // north of Pearson — never a diagonal cut. Corridor points are verbatim GO Kitchener shape points
 // (slim GTFS shape UNMO); the junction is the shape point nearest Hwy 427's longitude.
