@@ -75,7 +75,7 @@ const html = `<!doctype html><meta charset="utf-8">
   <div class="card">
     <svg viewBox="0 0 64 40"><rect x="3" y="5" width="58" height="26" rx="9" fill="#ff5a5f"/><rect x="3" y="21" width="58" height="5" fill="#ffd23f"/><rect x="9" y="10" width="11" height="8" rx="2.5" fill="#e6f7ff"/><rect x="24" y="10" width="11" height="8" rx="2.5" fill="#e6f7ff"/><rect x="39" y="10" width="11" height="8" rx="2.5" fill="#e6f7ff"/><rect x="53" y="10" width="6" height="12" rx="2" fill="#e6f7ff"/><circle cx="15" cy="34" r="4.5" fill="#34495e"/><circle cx="49" cy="34" r="4.5" fill="#34495e"/></svg>
     <div>
-      <div class="logo">Tiny Trains</div>
+      <div class="logo">TOyTRANSIT</div>
       <h1>Every train in the city, <em>live</em></h1>
       <p>Real trains, real positions, the real rolling stock · tinytrains.app</p>
     </div>

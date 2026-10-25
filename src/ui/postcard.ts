@@ -80,7 +80,7 @@ export async function makePostcard(app: App): Promise<Blob | null> {
   g.textAlign = 'left';
   g.fillStyle = '#ff5a5f';
   g.font = '700 38px Fredoka, sans-serif';
-  g.fillText('Tiny Trains', pad + 4, pad + H + 60);
+  g.fillText('TOyTRANSIT', pad + 4, pad + H + 60);
   g.fillStyle = '#22324a';
   g.font = '600 24px Fredoka, sans-serif';
   const when = new Intl.DateTimeFormat('en-US', { timeZone: CITIES[c.id].tz, weekday: 'long', hour: 'numeric', minute: '2-digit' }).format(Date.now());

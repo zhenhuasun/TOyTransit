@@ -168,19 +168,19 @@ async function page(req: Request, url: URL, env: Env): Promise<Response> {
   const station = kv.station ? data?.stations.find((s) => s.id === kv.station) : undefined;
   const stock = kv.stock ? STOCK[kv.stock] : undefined;
   const lineName = line ? line.name.replace(/ line$/i, '') : '';
-  let title = `Every train in ${cfg.name}, live · Tiny Trains`;
-  let desc = `Watch every ${cfg.tagline} train in ${cfg.name} move in real time on a tiny isometric toy map. Tap any train to ride along.`;
+  let title = `Every vehicle in ${cfg.name}, live · TOyTRANSIT`;
+  let desc = `Watch every vehicle in ${cfg.name} move in real time on a tiny isometric toy map. Tap any vehicle to ride along.`;
   if (line && kv.train) {
-    title = `Ride the ${lineName} live · Tiny Trains`;
-    desc = `Follow this ${lineName} train through ${cfg.name} in real time, with its next stops and the train itself in 3D.`;
+    title = `Ride the ${lineName} live · TOyTRANSIT`;
+    desc = `Follow this ${lineName} vehicle through ${cfg.name} in real time, with its next stops and the vehicle itself in 3D.`;
   } else if (line) {
-    title = `Every ${lineName} train, live · Tiny Trains`;
-    desc = `See every ${lineName} train in ${cfg.name} right now, where it is and where it's heading.`;
+    title = `Every ${lineName} vehicle, live · TOyTRANSIT`;
+    desc = `See every ${lineName} vehicle in ${cfg.name} right now, where it is and where it's heading.`;
   } else if (station) {
-    title = `${station.name} · live departures · Tiny Trains`;
-    desc = `The next trains at ${station.name}, ${cfg.name}, and every one of them moving on the map in real time.`;
+    title = `${station.name} · live departures · TOyTRANSIT`;
+    desc = `The next vehicles at ${station.name}, ${cfg.name}, and every one of them moving on the map in real time.`;
   } else if (stock) {
-    title = `${stock.name} · Tiny Trains`;
+    title = `${stock.name} · TOyTRANSIT`;
     desc = `${stock.blurb || `A ${stock.name} in ${cfg.name}.`} Find one running right now.`;
   }
   const canonical = `${url.origin}${url.pathname}`;

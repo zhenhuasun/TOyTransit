@@ -1,7 +1,7 @@
 {
-  "name": "Tiny Trains",
-  "short_name": "Tiny Trains",
-  "description": "Every train, live, on a tiny toy map.",
+  "name": "TOyTRANSIT",
+  "short_name": "TOyTRANSIT",
+  "description": "Every vehicle, live, on a tiny toy map.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",

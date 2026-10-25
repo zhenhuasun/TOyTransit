@@ -134,28 +134,57 @@ export class Network implements Layer {
     // Ribbons are drawn in one pass without writing depth, in a fixed priority order: tunnels, then
     // surface, then elevated; within a level, by line. The GPU rasterizes in submission order, so
     // wherever ribbons cross or run parallel the same one always wins: no z-fighting at any zoom.
+    //
+    // Two meshes: rail lines (subway, LRT, streetcar, UP Express, ferry) draw in full color, while
+    // bus-only segments go to a second mesh that always renders in the pale "unfocused" wash, so
+    // the default view reads as rail-first and no bus route looks highlighted. Selecting a bus
+    // still shows its full route: the selection's RouteHint draws it brightly on top. A color band
+    // shared by a rail line and a bus line (streetcar track a bus also uses) stays in the rail mesh.
     const lineRank = new Map(this.data.lines.map((l, i) => [l.color.toLowerCase(), i]));
-    const inputs: { pts: number[]; color: THREE.Color; lane: number; elev: Float32Array; kind: number; prio: number }[] = [];
+    type TrackInput = { pts: number[]; color: THREE.Color; lane: number; elev: Float32Array; kind: number; prio: number };
+    const railInputs: TrackInput[] = [];
+    const busInputs: TrackInput[] = [];
+    const systemOf = (id: string) => this.lines.get(id)?.system;
     for (const r of this.segs) {
       const pts = r.seg.pts;
       let level = 0;
       for (const e of r.el) level = Math.max(level, Math.round(e));
       for (let i = 0; i < r.colors.length; i++) {
-        inputs.push({
+        const col = r.colors[i];
+        const bandLines = r.seg.lines.filter((id) => this.lines.get(id)?.color.toLowerCase() === col);
+        // kind 1 = road/water ribbon (flat, no ballast/sleepers/rails): every line on this band is
+        // a bus or a ferry. Anything with a rail line on it keeps the rail look.
+        const road = bandLines.length > 0 && bandLines.every((id) => systemOf(id) === 'bus' || systemOf(id) === 'ferry');
+        const busOnly = bandLines.length > 0 && bandLines.every((id) => systemOf(id) === 'bus');
+        (busOnly ? busInputs : railInputs).push({
           pts,
-          color: new THREE.Color(r.colors[i]),
+          color: new THREE.Color(col),
           lane: i - (r.colors.length - 1) / 2,
           elev: r.el,
-          kind: 0,
-          prio: (level + 1) * 1000 - (lineRank.get(r.colors[i]) ?? 999),
+          kind: road ? 1 : 0,
+          prio: (level + 1) * 1000 - (lineRank.get(col) ?? 999),
         });
       }
     }
-    inputs.sort((a, b) => a.prio - b.prio);
-    const geo = buildRibbons(inputs, TRACK_Y);
+    const addMesh = (inputs: TrackInput[], busDim: boolean) => {
+      if (!inputs.length) return;
+      inputs.sort((a, b) => a.prio - b.prio);
+      const geo = buildRibbons(inputs, TRACK_Y);
+      const mesh = new THREE.Mesh(geo, this.makeTrackMaterial(busDim));
+      mesh.receiveShadow = true;
+      mesh.renderOrder = 1;
+      this.group.add(mesh);
+    };
+    addMesh(railInputs, false);
+    addMesh(busInputs, true);
+  }
+
+  /** Track ribbon material. busDim renders the mesh permanently in the pale "unfocused" wash. */
+  private makeTrackMaterial(busDim: boolean) {
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, depthWrite: false });
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, netUniforms, groundUniforms, lookUniforms);
+      sh.uniforms.uBusDim = { value: busDim ? 1 : 0 };
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', `#include <common>\n${RIBBON_VERT_PARS}`)
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);')
@@ -167,7 +196,7 @@ export class Network implements Layer {
           /* glsl */ `#include <common>
           varying float vSide; varying float vDist; varying float vKind; varying float vElev;
           uniform float uDetail; uniform float uHalfW; uniform float uScale; uniform float uTrackOff;
-          uniform vec3 uFocusCols[16]; uniform int uFocusN; uniform float uNight;
+          uniform vec3 uFocusCols[16]; uniform int uFocusN; uniform float uNight; uniform float uBusDim;
           ${LOOK_PARS}`,
         )
         .replace(
@@ -176,6 +205,12 @@ export class Network implements Layer {
           vec3 lineCol = diffuseColor.rgb;
           vec3 inkCol = mix(lineCol, vec3(1.0), uLk_lineWhite);
           inkCol = mix(vec3(dot(inkCol, vec3(0.3, 0.59, 0.11))), inkCol, uLk_lineSat);
+          // Bus mesh: wash the ink itself, so the far color, the edge stripes and the night glow
+          // all come out pale together. Focus can only dim it further, never brighten it.
+          if (uBusDim > 0.5) {
+            float ig = dot(inkCol, vec3(0.3, 0.59, 0.11));
+            inkCol = mix(inkCol, vec3(ig) * 0.3 + mix(vec3(0.62), vec3(0.2, 0.24, 0.36), uNight), 0.82);
+          }
           float a = abs(vSide);
           vec3 far = mix(inkCol, inkCol * 0.78, smoothstep(0.78, 1.0, a));
           // Diagram styles case each line: at least ~1.3 px (or 12% of the ribbon) of casing color along both edges,
@@ -197,6 +232,14 @@ export class Network implements Layer {
           float rail = 1.0 - smoothstep(0.05 * uScale, 0.1 * uScale, abs(tDist - gauge * 0.5));
           near = mix(near, vec3(0.86, 0.88, 0.92), rail);
           near = mix(near, inkCol, smoothstep(0.8, 0.86, a));
+          // Road/water ribbons (bus, ferry): flat asphalt with line-color edge stripes and a
+          // dashed center line — never ballast, sleepers or rails.
+          float isRoad = step(0.5, vKind);
+          vec3 road = vec3(0.24, 0.24, 0.26);
+          road = mix(road, inkCol, smoothstep(0.8, 0.86, a));
+          float dash = step(0.5, fract(vDist / (8.0 * uScale)));
+          road = mix(road, vec3(0.88, 0.88, 0.82), dash * (1.0 - smoothstep(0.03 * uScale, 0.08 * uScale, abs(across))) * 0.85);
+          near = mix(near, road, isRoad);
           diffuseColor.rgb = mix(far, near, uDetail * uLk_lineDetail);
           // Glowing styles light the line from within; a dim lit surface keeps overlaps from summing to white.
           diffuseColor.rgb *= 1.0 - 0.75 * uLk_lineGlow;
@@ -218,10 +261,10 @@ export class Network implements Layer {
           '#include <emissivemap_fragment>\ntotalEmissiveRadiance += inkCol * max(uNight, uLk_lineGlow) * mix(mix(0.75, 0.25, uDetail * uLk_lineDetail), 0.72, uLk_lineGlow) * (uFocusN > 0 ? mix(0.25, 1.6, focusHit) : 1.0);',
         );
     };
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    mesh.renderOrder = 1;
-    this.group.add(mesh);
+    // The two materials differ only in a closed-over flag, so give them distinct program cache
+    // keys or three.js would reuse one compiled program for both.
+    mat.customProgramCacheKey = () => (busDim ? 'track-bus' : 'track-rail');
+    return mat;
   }
 
   /**

@@ -121,7 +121,7 @@ export class UI {
     this.soundscape = new Soundscape(app);
     this.root.innerHTML = `
       <header class="brand">
-        <button class="logo" aria-label="Tiny Trains: back to the city overview">${TRAIN_SVG}<div><h1>Tiny&nbsp;Trains</h1><p class="tagline"></p></div></button>
+        <button class="logo" aria-label="TOyTRANSIT: back to the city overview">${TRAIN_SVG}<div><h1>TOyTRANSIT</h1><p class="tagline"></p></div></button>
         <div class="style-wrap">
           <div class="style-bar"></div>
           <div class="themes panel" hidden role="dialog" aria-label="Themes"></div>
@@ -129,15 +129,15 @@ export class UI {
         <div class="pills">
           <button class="live" title="Data sources"><i></i><span class="live-text">connecting…</span></button>
           <button class="fleet-btn pill-btn" title="Meet the fleet (G)">${FLEET_SVG}<span>Fleet</span></button>
-          <button class="search-btn pill-btn" title="Search stations, lines & trains (/)">${SEARCH_SVG}<span>Search</span><kbd>/</kbd></button>
+          <button class="search-btn pill-btn" title="Search stations, lines & vehicles (/)">${SEARCH_SVG}<span>Search</span><kbd>/</kbd></button>
         </div>
         <div class="sources" hidden></div>
       </header>
       <button class="city-switch" aria-haspopup="dialog" title="Change city (C)"></button>
-      <button class="tour-cta" data-act="tour" title="Tour: ride along from train to train (T)">${PLAY_SVG}<span class="tc-text">Tour the city</span></button>
+      <button class="tour-cta" data-act="tour" title="Tour: ride along from vehicle to vehicle (T)">${PLAY_SVG}<span class="tc-text">Tour the city</span></button>
       <div class="picker" hidden role="dialog" aria-label="Choose a city"><div class="picker-inner panel"></div></div>
       <div class="search" hidden role="dialog" aria-label="Search"><div class="search-inner panel">
-        <div class="search-field">${SEARCH_SVG}<input type="search" placeholder="Search stations, lines, trains, cities…" autocomplete="off" spellcheck="false" /><button class="search-close" aria-label="Close">Esc</button></div>
+        <div class="search-field">${SEARCH_SVG}<input type="search" placeholder="Search stations, lines, vehicles, cities…" autocomplete="off" spellcheck="false" /><button class="search-close" aria-label="Close">Esc</button></div>
         <ol class="search-results"></ol>
       </div></div>
       <section class="legend panel" aria-label="Lines">
@@ -218,8 +218,8 @@ export class UI {
       app.toggleTour(true);
     });
     this.$('.hint').innerHTML = TOUCH
-      ? 'Pinch to zoom · twist to rotate · <b>tap any train</b>'
-      : 'Drag to pan · scroll to zoom · right-drag to rotate · <b>click any train</b>';
+      ? 'Pinch to zoom · twist to rotate · <b>tap any vehicle</b>'
+      : 'Drag to pan · scroll to zoom · right-drag to rotate · <b>click any vehicle</b>';
     this.setupSearch();
     for (const card of this.root.querySelectorAll<HTMLElement>('.card')) makeSheet(card, () => this.closeCard(card));
     this.$('.controls').addEventListener('click', (e) => {
@@ -474,16 +474,16 @@ export class UI {
       </section>
       <section><h3>Interface</h3>
         ${sw('ui', 'Show interface', !document.body.classList.contains('ui-hidden'), 'Off: just the map (H)')}
-        ${sw('autotour', 'Tour when idle', this.app.autoTour, 'Ride along from train to train if the map is left alone')}
+        ${sw('autotour', 'Tour when idle', this.app.autoTour, 'Ride along from vehicle to vehicle if the map is left alone')}
       </section>
       <section><h3>Sound</h3>
-        ${sw('sound', 'Sound', soundOn(), 'Plays when you pick a train')}
+        ${sw('sound', 'Sound', soundOn(), 'Plays when you pick a vehicle')}
         <label class="set-row set-range ${soundOn() ? '' : 'off'}"><span><b>Volume</b></span><input type="range" min="0" max="1" step="0.05" value="${soundPrefs.volume}" data-set="volume"/></label>
         ${sw('voice', 'Announcements', soundPrefs.voice, 'Spoken in each city’s own language and style')}
-        ${sw('rumble', 'Ride sounds', soundPrefs.rumble, 'The rumble, whine and clatter of the train you follow')}
+        ${sw('rumble', 'Ride sounds', soundPrefs.rumble, 'The rumble, whine and clatter of the vehicle you follow')}
       </section>
       ${TOUCH ? '' : `<section><h3>Keys</h3><dl class="set-keys">${[
-        ['1–9', 'cities'], ['C', 'city picker'], ['/', 'search'], ['T', 'tour'], ['F', 'follow'], ['R', 'surprise train'], ['G', 'fleet'], ['A', 'planes'],
+        ['1–9', 'cities'], ['C', 'city picker'], ['/', 'search'], ['T', 'tour'], ['F', 'follow'], ['R', 'surprise vehicle'], ['G', 'fleet'], ['A', 'planes'],
         ['L', 'sky'], ['V', 'theme'], ['M', 'sound'], ['H', 'hide interface'], ['S', 'share'], ['P', 'postcard'], ['Q / E', 'rotate'], ['N', 'reset view'],
       ].map(([k, d]) => `<div><dt><kbd>${k}</kbd></dt><dd>${d}</dd></div>`).join('')}</dl></section>`}
       <p class="set-foot"><button class="set-about">About &amp; data</button></p>`;
@@ -625,10 +625,10 @@ export class UI {
       document.body.appendChild(el);
     }
     const lines = (c.transit?.lines ?? []).slice(0, 14).map((l) => bullet(l, c.id, 30)).join('');
-    el.innerHTML = `<div class="og-logo">${TRAIN_SVG}<span>Tiny Trains</span></div>
-      <h1>Every train in ${esc(CITIES[c.id].name)}, <em>live</em></h1>
+    el.innerHTML = `<div class="og-logo">${TRAIN_SVG}<span>TOyTRANSIT</span></div>
+      <h1>Every vehicle in ${esc(CITIES[c.id].name)}, <em>live</em></h1>
       <div class="og-lines">${lines}</div>
-      <p>tinytrains.app</p>`;
+      <p>toronto-toy-map.zhenhuasun.workers.dev</p>`;
   }
 
   weatherChanged() {
@@ -826,8 +826,8 @@ export class UI {
     for (const r of regions) r[1].sort((a, b) => CITIES[a].name.localeCompare(CITIES[b].name));
     const total = Object.values(this.summary).reduce((n, x) => n + x.trains, 0);
     inner.querySelector('.world-count')!.innerHTML = total
-      ? `<b>${total.toLocaleString()}</b> trains moving in Toronto right now`
-      : `Toronto, every train live`;
+      ? `<b>${total.toLocaleString()}</b> vehicles moving in Toronto right now`
+      : `Toronto, every vehicle live`;
     const fold = (t: string) => t.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const q = fold(this.pickerFilter.trim());
     // Prefix matches on any word of the name ("sh" → Shanghai, Shenzhen), or anywhere in the local name.
@@ -905,7 +905,7 @@ export class UI {
           <div class="chips">${lines
             .map(
               (l) =>
-                `<button class="chip ${focus === l.id ? 'focus' : focus ? 'dim' : ''}" data-line="${esc(l.id)}" title="${esc(l.name)} · ${counts.get(l.id) ?? 0} trains · click to highlight">${bullet(l, c.id, 22)}<span class="cnt">${counts.get(l.id) ?? 0}</span></button>`,
+                `<button class="chip ${focus === l.id ? 'focus' : focus ? 'dim' : ''}" data-line="${esc(l.id)}" title="${esc(l.name)} · ${counts.get(l.id) ?? 0} vehicles · click to highlight">${bullet(l, c.id, 22)}<span class="cnt">${counts.get(l.id) ?? 0}</span></button>`,
             )
             .join('')}</div></div>`;
       })
@@ -958,7 +958,7 @@ export class UI {
       if (n === 0) txt.innerHTML = this.sleepyText();
       else {
         let num = txt.querySelector<HTMLElement>('b.num');
-        const tail = `${n === 1 ? 'train' : 'trains'} ${anyLive ? 'live now' : 'running'}`;
+        const tail = `${n === 1 ? 'vehicle' : 'vehicles'} moving now`;
         if (!num) {
           txt.innerHTML = `<b class="num" data-value="0">0</b> <span class="tail"></span>`;
           num = txt.querySelector<HTMLElement>('b.num')!;
@@ -986,15 +986,15 @@ export class UI {
     }
     const first = FIRST_TRAIN[c.id];
     el.innerHTML = asleepNow(c.id)
-      ? `<svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 3a8.5 8.5 0 1 0 6 14.5A9.5 9.5 0 0 1 15 3z" fill="#ffd23f"/></svg><span>Shh — ${esc(CITIES[c.id].name)}'s trains are tucked in for the night. First departures are around <b>${Math.floor(first)}:${first % 1 ? '30' : '00'}</b> local time.</span>`
+      ? `<svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 3a8.5 8.5 0 1 0 6 14.5A9.5 9.5 0 0 1 15 3z" fill="#ffd23f"/></svg><span>Shh — ${esc(CITIES[c.id].name)}'s vehicles are tucked in for the night. First departures are around <b>${Math.floor(first)}:${first % 1 ? '30' : '00'}</b> local time.</span>`
       : `<span>Waiting for the first live positions…</span>`;
     reveal(el, true);
   }
 
   private sleepyText() {
     const c = this.app.city;
-    if (!c) return 'no trains';
-    return asleepNow(c.id) ? '<b>zzz</b> the trains are asleep' : 'no trains reported';
+    if (!c) return 'no vehicles';
+    return asleepNow(c.id) ? '<b>zzz</b> the vehicles are asleep' : 'no vehicles reported';
   }
 
   // -------------------------------------------------------------------------
@@ -1151,12 +1151,12 @@ export class UI {
       <div class="tc-facts">
         <div><b>${st.cars}</b><span>${spec.sections && spec.sections > 1 ? 'vehicles' : st.cars === 1 ? 'car' : 'cars'}</span></div>
         <div class="tc-delay"><b>—</b><span>status</span></div>
-        ${st.label ? `<div><b class="mono">${esc(st.label)}</b><span>train</span></div>` : ''}
+        ${st.label ? `<div><b class="mono">${esc(st.label)}</b><span>vehicle</span></div>` : ''}
       </div>
       ${soundOn() ? '' : '<button class="sound-pill"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Hear its announcements &amp; chimes</button>'}
       <div class="tc-now"></div>
       <ol class="tc-stops"></ol>
-      <div class="tc-actions"><button class="follow">Follow</button><button class="share" title="Share this train">${SHARE_SVG}<span>Share</span></button><button class="random" title="R">Surprise me</button></div>
+      <div class="tc-actions"><button class="follow">Follow</button><button class="share" title="Share this vehicle">${SHARE_SVG}<span>Share</span></button><button class="random" title="R">Surprise me</button></div>
     `;
     card.querySelector('.tc-stock')!.appendChild(this.preview.canvas);
     this.preview.show(spec, t.line.color);
@@ -1534,19 +1534,19 @@ export class UI {
     if (r.train) {
       const t = c?.trains?.trains.get(r.train);
       const dest = t ? ` to ${t.state.dest}` : '';
-      return { title: `${cap(lname)} train${dest}, live · Tiny Trains`, text: `Riding along with ${lname} train${dest} in ${city}, right now 🚆` };
+      return { title: `${cap(lname)} vehicle${dest}, live · TOyTRANSIT`, text: `Riding along with ${lname} vehicle${dest} in ${city}, right now 🚆` };
     }
-    if (line) return { title: `Every ${line.name.replace(/ line$/i, '')} train, live · Tiny Trains`, text: `Every ${lname} train in ${city}, moving in real time 🚆` };
+    if (line) return { title: `Every ${line.name.replace(/ line$/i, '')} vehicle, live · TOyTRANSIT`, text: `Every ${lname} vehicle in ${city}, moving in real time 🚆` };
     if (r.station) {
       const st = c?.network?.stations.get(r.station);
-      return { title: `${st?.name ?? 'Station'} · live departures · Tiny Trains`, text: `Trains arriving at ${st?.name} in ${city}, live 🚉` };
+      return { title: `${st?.name ?? 'Station'} · live departures · TOyTRANSIT`, text: `Vehicles arriving at ${st?.name} in ${city}, live 🚉` };
     }
     if (r.stock) {
       const spec = STOCK[r.stock];
-      return { title: `${spec?.name ?? 'A train'}, live · Tiny Trains`, text: `Find a ${spec?.name} running in ${city} right now 🚆` };
+      return { title: `${spec?.name ?? 'A vehicle'}, live · TOyTRANSIT`, text: `Find a ${spec?.name} running in ${city} right now 🚆` };
     }
     const n = c?.trains?.count() ?? 0;
-    return { title: `Every train in ${city}, live · Tiny Trains`, text: `${n ? `${n.toLocaleString()} trains` : 'Every train'} moving through ${city} right now, on a tiny toy map 🚆` };
+    return { title: `Every vehicle in ${city}, live · TOyTRANSIT`, text: `${n ? `${n.toLocaleString()} vehicles` : 'Every vehicle'} moving through ${city} right now, on a tiny toy map 🚆` };
   }
 
   toast(text: string) {
@@ -1623,9 +1623,9 @@ export class UI {
     const c = this.app.city;
     const attr = c?.transit?.attribution ?? [];
     a.innerHTML = `<button class="x" aria-label="Close">×</button>
-      <h2>Tiny Trains</h2>
-      <p>Every dot is a real train, placed from live arrival predictions and vehicle feeds and animated along the actual track. The sky, sun, moon and weather match each city right now.</p>
-      <p><b>Keys:</b> 1–9 cities · C city picker · / search · Q/E rotate · +/− zoom · F follow · T tour · R surprise train · G fleet · L sky · A planes · V theme · H hide interface · , settings · M sound · S share · P postcard · Esc close</p>
+      <h2>TOyTRANSIT</h2>
+      <p>Every dot is a real vehicle, placed from live arrival predictions and vehicle feeds and animated along its actual route. The sky, sun, moon and weather match Toronto right now.</p>
+      <p><b>Keys:</b> 1–9 cities · C city picker · / search · Q/E rotate · +/− zoom · F follow · T tour · R surprise vehicle · G fleet · L sky · A planes · V theme · H hide interface · , settings · M sound · S share · P postcard · Esc close</p>
       <h3>Data</h3><ul>${attr.map((x) => `<li>${esc(x)}</li>`).join('')}<li>Map data © OpenStreetMap contributors · OpenMapTiles · OpenFreeMap</li><li>Weather: Open-Meteo</li></ul>
       <p class="muted">Schedules marked "timetable" are simulated from official timetables where no public live feed exists (or an API key isn't configured).</p>`;
     a.querySelector('.x')!.addEventListener('click', () => reveal(a, false));

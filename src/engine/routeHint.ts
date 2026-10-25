@@ -89,7 +89,8 @@ export class RouteHint implements Layer {
     }
     this.mesh.visible = true;
     this.mat.uniforms.uTime.value = f.time;
-    this.mat.uniforms.uStart.value = t.disp ?? 0;
+    // Buses show their full route when selected; rail keeps the ahead-only hint.
+    this.mat.uniforms.uStart.value = t.line.system === 'bus' ? 0 : (t.disp ?? 0);
     this.mat.uniforms.uHalfW.value = Math.max(2, f.mpp * 2.2);
     this.mat.uniforms.uDash.value = Math.max(12, f.mpp * 22);
   }
