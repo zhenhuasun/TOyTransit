@@ -76,27 +76,28 @@ for (const t of WARD_CITY) {
     ],
   });
 }
-// --- Billy Bishop ferry: every 15 min each way, 2-min crossing. Hours approximate (flagged in report). ---
-const bbRuns: Run[] = [];
-for (let t = 5 * 60; t <= 23 * 60 + 45; t += 15) {
-  const hh = String(Math.floor(t / 60)).padStart(2, '0'), mm = String(t % 60).padStart(2, '0');
-  bbRuns.push({
-    id: `bb-${hh}${mm}`, line: 'f-bb', stock: 'toronto-bbferry', cars: 1,
-    dest: 'Billy Bishop Airport', dir: 'Outbound',
-    legs: [
-      { s: 'tor:bb-city', arr: t * 60 - 120, dep: t * 60 },
-      { s: 'tor:bb-airport', arr: (t + 2) * 60, dep: (t + 2) * 60 },
-    ],
-  });
-  bbRuns.push({
-    id: `bb-${hh}${mm}r`, line: 'f-bb', stock: 'toronto-bbferry', cars: 1,
-    dest: 'Eireann Quay', dir: 'Inbound',
-    legs: [
-      { s: 'tor:bb-airport', arr: t * 60 - 120, dep: t * 60 },
-      { s: 'tor:bb-city', arr: (t + 2) * 60, dep: (t + 2) * 60 },
-    ],
-  });
+// --- Billy Bishop ferry: ONE boat shuttling, exact schedule (user-supplied 2026-10-25) ---
+// Mainland deps 05:15–00:00 every 15 min; island deps 05:22–00:07 every 15 min; 90 s crossing.
+// Legs alternate docks: mainland dep -> 90 s water -> dwell at island slip -> island dep -> 90 s
+// water -> dwell at mainland -> repeat. The 7-min schedule gap is crossing + dwell/turnaround, and
+// the boat is visible during dwells because the whole day is a single run (not per-crossing runs
+// that would make it vanish between trips). Service window 05:15–00:07 daily.
+const S = (h: number, m: number, s = 0) => h * 3600 + m * 60 + s;
+const bbLegs: Leg[] = [{ s: 'tor:bb-city', arr: S(5, 15), dep: S(5, 15) }];
+for (let t = 5 * 60 + 15; t <= 24 * 60; t += 15) {
+  // t = mainland departure, in minutes. Island arrival 90 s later; island departure 7 min after.
+  bbLegs.push({ s: 'tor:bb-airport', arr: t * 60 + 90, dep: (t + 7) * 60 });
+  if (t + 15 <= 24 * 60) {
+    bbLegs.push({ s: 'tor:bb-city', arr: (t + 7) * 60 + 90, dep: (t + 15) * 60 });
+  } else {
+    // Final arrival at mainland after the last island departure (00:07); the run ends here.
+    bbLegs.push({ s: 'tor:bb-city', arr: (t + 7) * 60 + 90, dep: (t + 7) * 60 + 90 });
+  }
 }
+const bbShuttle: Run = {
+  id: 'bb-shuttle', line: 'f-bb', stock: 'toronto-bbferry', cars: 1,
+  dest: 'Billy Bishop Ferry', dir: 'Shuttle', legs: bbLegs,
+};
 
 // --- UP Express: every 15 min each way, 25-min run. Times approximate (flagged in report). ---
 // Union -> Bloor 8 min, Bloor -> Weston 7 min, Weston -> Pearson 10 min (and reverse).
@@ -126,6 +127,6 @@ for (let t = 5 * 60 + 30; t <= 23 * 60 + 45; t += 15) {
 }
 
 export const createTorontoSimAdapters: AdapterFactory = () => [
-  simAdapter('toronto-ferry', 'Toronto Island Ferry · timetable', [...ferryRuns, ...bbRuns]),
+  simAdapter('toronto-ferry', 'Toronto Island Ferry · timetable', [...ferryRuns, bbShuttle]),
   simAdapter('toronto-up', 'UP Express · timetable', upRuns),
 ];
