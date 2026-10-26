@@ -1,6 +1,8 @@
 // Toronto adapters: TTC via the GTFS kit timetable + the official TTC GTFS-RT overlay
 // (ttc-rt.ts: surface vehicle positions + subway arrival predictions, NextBus fallback), plus
-// timetable-simulated ferries and UP Express. LRT routes 5/6 have no RT feed and stay simulated.
+// timetable-simulated ferries and UP Express (timetable.ts + the official Metrolinx GTFS-RT
+// overlay in up-rt.ts when a key is configured, timetable fallback otherwise).
+// LRT routes 5/6 have no RT feed and stay simulated.
 import type { AdapterFactory } from '../types.ts';
 import { gtfsAdapters } from '../gtfs/index.ts';
 import { TtcRtSource } from './ttc-rt.ts';

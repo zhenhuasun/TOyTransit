@@ -18,6 +18,7 @@ export interface AdapterEnv {
   DIGITRANSIT_KEY?: string; // digitransit.fi (Helsinki realtime)
   TDX_CLIENT_ID?: string; // tdx.transportdata.tw OAuth client (Taipei Metro realtime)
   TDX_CLIENT_SECRET?: string;
+  METROLINX_API_KEY?: string; // api.openmetrolinx.com (UP Express GTFS-RT; Worker secret, never in repo)
   /** Key-value storage that survives restarts (Durable Object storage on Cloudflare), for state such as call budgets. */
   storage?: { get<T>(key: string): Promise<T | undefined>; put(key: string, value: unknown): Promise<void> };
 }

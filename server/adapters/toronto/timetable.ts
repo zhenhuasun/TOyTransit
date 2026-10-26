@@ -5,6 +5,7 @@
 // service and are intentionally absent here; their summer timetables need fetching when the City posts them.
 import type { TrainState } from '../../../shared/types.ts';
 import type { Adapter, AdapterFactory } from '../types.ts';
+import { UpRtOverlay } from './up-rt.ts';
 
 /** Seconds since local midnight in America/Toronto, DST-safe via Intl. */
 function torontoDaySec(nowMs: number): number {
@@ -99,8 +100,9 @@ const bbShuttle: Run = {
   dest: 'Billy Bishop Ferry', dir: 'Shuttle', legs: bbLegs,
 };
 
-// --- UP Express: every 15 min each way, 25-min run. Times approximate (flagged in report). ---
-// Union -> Bloor 8 min, Bloor -> Weston 7 min, Weston -> Pearson 10 min (and reverse).
+// --- UP Express: every 15 min each way, 28-min run (official schedule; Mount Dennis is the
+// fifth station, opened 2025-11-16). Union -> Bloor 8 min, Bloor -> Mount Dennis 4 min,
+// Mount Dennis -> Weston 4 min, Weston -> Pearson 9 min (and reverse, mirrored). ---
 const upRuns: Run[] = [];
 for (let t = 5 * 60 + 30; t <= 23 * 60 + 45; t += 15) {
   const hh = String(Math.floor(t / 60)).padStart(2, '0'), mm = String(t % 60).padStart(2, '0');
@@ -110,8 +112,9 @@ for (let t = 5 * 60 + 30; t <= 23 * 60 + 45; t += 15) {
     legs: [
       { s: 'tor:up-union', arr: t * 60 - 300, dep: t * 60 },
       { s: 'tor:up-bloor', arr: (t + 8) * 60, dep: (t + 9) * 60 },
-      { s: 'tor:up-weston', arr: (t + 16) * 60, dep: (t + 17) * 60 },
-      { s: 'tor:up-pearson', arr: (t + 25) * 60, dep: (t + 25) * 60 },
+      { s: 'tor:up-mount-dennis', arr: (t + 13) * 60, dep: (t + 14) * 60 },
+      { s: 'tor:up-weston', arr: (t + 18) * 60, dep: (t + 19) * 60 },
+      { s: 'tor:up-pearson', arr: (t + 28) * 60, dep: (t + 28) * 60 },
     ],
   });
   upRuns.push({
@@ -119,14 +122,36 @@ for (let t = 5 * 60 + 30; t <= 23 * 60 + 45; t += 15) {
     dest: 'Union Station', dir: 'Eastbound',
     legs: [
       { s: 'tor:up-pearson', arr: t * 60 - 300, dep: t * 60 },
-      { s: 'tor:up-weston', arr: (t + 10) * 60, dep: (t + 11) * 60 },
-      { s: 'tor:up-bloor', arr: (t + 18) * 60, dep: (t + 19) * 60 },
-      { s: 'tor:up-union', arr: (t + 25) * 60, dep: (t + 25) * 60 },
+      { s: 'tor:up-weston', arr: (t + 9) * 60, dep: (t + 10) * 60 },
+      { s: 'tor:up-mount-dennis', arr: (t + 14) * 60, dep: (t + 15) * 60 },
+      { s: 'tor:up-bloor', arr: (t + 19) * 60, dep: (t + 20) * 60 },
+      { s: 'tor:up-union', arr: (t + 28) * 60, dep: (t + 28) * 60 },
     ],
   });
 }
 
-export const createTorontoSimAdapters: AdapterFactory = () => [
-  simAdapter('toronto-ferry', 'Toronto Island Ferry · timetable', [...ferryRuns, bbShuttle]),
-  simAdapter('toronto-up', 'UP Express · timetable', upRuns),
-];
+export const createTorontoSimAdapters: AdapterFactory = (env) => {
+  // UP Express: official GTFS-RT overlay when a key is configured, timetable fallback otherwise.
+  // Same adapter id either way, so live trains REPLACE (never duplicate) sim trains: matched
+  // live trains reuse the sim run id, and only unmatched sim runs stay simulated.
+  const upRt = new UpRtOverlay(env.METROLINX_API_KEY);
+  const upAdapter: Adapter = {
+    id: 'toronto-up',
+    city: 'toronto',
+    get name() { return upRt.hasLive ? 'UP Express · GTFS-RT' : 'UP Express · timetable'; },
+    get live() { return upRt.hasLive; },
+    intervalMs: 30_000,
+    poll: async (now) => {
+      const sim = trainsNow(upRuns, now);
+      await upRt.refresh(now);
+      const live = upRt.liveTrains(upRuns, now);
+      if (!live.length) return sim;
+      const liveIds = new Set(live.map((t) => t.id));
+      return [...live, ...sim.filter((t) => !liveIds.has(t.id))];
+    },
+  };
+  return [
+    simAdapter('toronto-ferry', 'Toronto Island Ferry · timetable', [...ferryRuns, bbShuttle]),
+    upAdapter,
+  ];
+};

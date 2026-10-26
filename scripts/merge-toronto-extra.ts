@@ -23,12 +23,19 @@ const STOPS: Record<string, { name: string; lon: number; lat: number; lines: str
   'tor:bb-airport': { name: 'Billy Bishop Airport', lon: -79.39657, lat: 43.63253, lines: ['f-bb'] },
   'tor:up-union': { name: 'Union Station', lon: -79.3806, lat: 43.645195, lines: ['up'] },
   'tor:up-bloor': { name: 'Bloor', lon: -79.450192, lat: 43.656928, lines: ['up'] },
+  // Fifth UP station (opened 2025-11-16 per UP Express; previously shape-only pass-through).
+  'tor:up-mount-dennis': { name: 'Mount Dennis', lon: -79.48703, lat: 43.68749, lines: ['up'] },
   'tor:up-weston': { name: 'Weston', lon: -79.51368, lat: 43.70029, lines: ['up'] },
   'tor:up-pearson': { name: 'Pearson Airport', lon: -79.6132584, lat: 43.6821671, lines: ['up'] },
 };
 
 const path = 'public/data/toronto/transit.json';
 const data = JSON.parse(readFileSync(path, 'utf8')) as TransitData;
+// UP geometry is REBUILT (not skipped) on every run: the 4-stop layout (Union->Bloor straight,
+// Bloor->Weston through a shape-only Mount Dennis) is replaced by the 5-stop layout below, and
+// the Union->Bloor arc replaces the old 2-point chord. Ferry and TTC entries are untouched.
+data.segments = data.segments.filter((s) => !s.lines.includes('up'));
+data.stations = data.stations.filter((s) => !s.id.startsWith('tor:up-'));
 const have = new Set(data.stations.map((s) => s.id));
 for (const [id, s] of Object.entries(STOPS)) {
   if (have.has(id)) continue;
@@ -51,14 +58,24 @@ seg('tor:ferry-city', 'tor:ferry-wards', ['f-ward']);
 seg('tor:ferry-city', 'tor:ferry-centre', ['f-centre']);
 seg('tor:ferry-city', 'tor:ferry-hanlans', ['f-hanlans']);
 seg('tor:bb-city', 'tor:bb-airport', ['f-bb']);
-seg('tor:up-union', 'tor:up-bloor', ['up']);
-// Bloor -> Weston traces the Kitchener corridor THROUGH Mount Dennis (GO station MD, 43.68749,
-// -79.48703). UP does not stop at Mount Dennis, so this is a shape-only waypoint — no station, no
-// timetable leg — the train simply passes through it. Curve points are verbatim GO shape UNMO points.
-seg('tor:up-bloor', 'tor:up-weston', ['up'], [
+// Union -> Bloor follows the Kitchener corridor arc (verbatim GO shape UNMO points, seq 8-40),
+// NOT the old straight chord: the corridor dips south out of Union, then curves northwest to Bloor.
+// The 5-via polyline stays within 80 m of the full 45-point shape (arc 6,577 m vs chord 6,057 m).
+seg('tor:up-union', 'tor:up-bloor', ['up'], [
+  [-79.39637, 43.64131], // UNMO seq 8
+  [-79.40676, 43.64008], // UNMO seq 16 (southernmost dip)
+  [-79.42295, 43.64066], // UNMO seq 24
+  [-79.43094, 43.64355], // UNMO seq 32 (turning northwest)
+  [-79.44427, 43.65122], // UNMO seq 40 (northwest approach to Bloor)
+]);
+// Bloor -> Weston traces the Kitchener corridor, now split at Mount Dennis — a real UP station
+// (fifth station, opened 2025-11-16), not a shape-only waypoint. Curve points are verbatim GO
+// shape UNMO points, as before.
+seg('tor:up-bloor', 'tor:up-mount-dennis', ['up'], [
   [-79.46162, 43.66883], // UNMO seq 57
   [-79.47449, 43.68071], // UNMO seq 66
-  [-79.48703, 43.68749], // Mount Dennis GO station (pass-through, not a UP stop)
+]);
+seg('tor:up-mount-dennis', 'tor:up-weston', ['up'], [
   [-79.50123, 43.69429], // UNMO seq 83
 ]);
 // UP Express follows the Kitchener corridor northwest from Weston and turns south ONLY at Hwy 427
