@@ -25,7 +25,7 @@ const EDGE_CACHE_S = 4;
 const isCity = (s: string): s is CityId => (CITY_ORDER as string[]).includes(s);
 
 // Toronto's static data is bundled as text (see wrangler.jsonc rules) and handed to the hub,
-// which parses it once; the NextBus overlay reads the transit geometry the same way.
+// which parses it once; the TTC GTFS-RT overlay reads the transit geometry the same way.
 const { CityHub } = defineCity('toronto', createAdapters, {
   'server/data/toronto/schedule.json': scheduleText,
   'public/data/toronto/transit.json': transitText,
