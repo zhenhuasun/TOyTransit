@@ -143,7 +143,7 @@ export const createTorontoSimAdapters: AdapterFactory = (env) => {
     intervalMs: 30_000,
     poll: async (now) => {
       const sim = trainsNow(upRuns, now);
-      await upRt.refresh(now);
+      await upRt.refresh(now, upRuns);
       const live = upRt.liveTrains(upRuns, now);
       if (!live.length) return sim;
       const liveIds = new Set(live.map((t) => t.id));

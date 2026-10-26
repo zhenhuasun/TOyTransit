@@ -6,9 +6,11 @@
 // Endpoints (help page api.openmetrolinx.com/OpenDataAPI/Help/Index/en):
 // - api/V1/UP/Gtfs/Feed/VehiclePosition: real vehicle positions (lat/lon, bearing, speed)
 // - api/V1/UP/Gtfs/Feed/TripUpdates: per-stop arrival predictions
-// Both return a GTFS-RT FeedMessage; JSON is requested via Accept (with a .json-suffix retry).
-// The key query parameter follows the API's documented convention (`key=`); live verification
-// of the exact parameter/format against the real feed is the deploy step's job, not this file's.
+// Both return a GTFS-RT FeedMessage; JSON is requested via Accept. (The .json-suffix
+// variant was verified live to 404 for these V1 UP endpoints, so there is no retry.)
+// The key query parameter is `key=` (verified live: the API answers with a structured
+// Metadata response, so the parameter is accepted; a 401/403 means the key lacks that
+// topic's capability, not a bad parameter).
 //
 // KEY HANDLING — read this before touching this file:
 // - The key comes ONLY from the environment (AdapterEnv.METROLINX_API_KEY: a Worker secret in
@@ -18,9 +20,12 @@
 // - On ANY feed failure (non-200, bad JSON, empty, stale) the overlay yields nothing and the
 //   timetable adapter serves sim trains instead — the client never sees an error or zero UP
 //   trains. The hub keeps the last good live snapshot until it goes stale (STALE_MS).
-// - Poll discipline is deliberate: one server-side fetch per 30 s shared by all visitors. The
-//   API docs warn a key can be disabled on extensive calls, so this must never become a
-//   per-client or per-train fetch.
+// - Poll discipline is deliberate: one server-side fetch per 60 s shared by all visitors,
+//   skipped entirely when no UP run is scheduled at the current Toronto time, with
+//   exponential backoff on failure (60 s -> 2 min -> 5 min -> 15 min -> 30 min cap, still
+//   probing at the cap so live auto-resumes if the key starts working again). The API docs
+//   warn a key can be disabled on extensive calls, so this must never become a per-client
+//   or per-train fetch, and must never keep hammering a refused key at full rate.
 //
 // RT trip_ids are Metrolinx's own, NOT the sim's up-u-.../up-p-... ids, so they are never used
 // as timetable keys. RT stop_ids are Metrolinx-internal codes absent from the map's data, so
@@ -36,13 +41,21 @@ import { politeFetch } from '../gtfs/realtime.ts';
 export const UP_WB = ['tor:up-union', 'tor:up-bloor', 'tor:up-mount-dennis', 'tor:up-weston', 'tor:up-pearson'];
 
 const API = 'https://api.openmetrolinx.com/OpenDataAPI';
-const EVERY_MS = 30_000;
+const EVERY_MS = 60_000;
 const STALE_MS = 120_000;
 const MAX_SNAP_M = 250;
 const AT_STATION_M = 40;
 const MATCH_M = 1500;
 const DEFAULT_SPEED_MS = 14; // ~50 km/h, UP's average including stops (22 km / 28 min)
 const DWELL_S = 60;
+
+/** Backoff ladder after consecutive VehiclePosition failures: 60 s, 2 min, 5 min, 15 min, then 30 min cap (still probing, so live auto-resumes). */
+const BACKOFF_MS = [60_000, 120_000, 300_000, 900_000, 1_800_000];
+
+/** Delay before the next fetch attempt after `failures` consecutive failures (1-based). */
+export function upBackoffMs(failures: number): number {
+  return BACKOFF_MS[Math.max(0, Math.min(failures, BACKOFF_MS.length) - 1)];
+}
 
 /** A sim run's legs, structurally (timetable.ts's Run, without importing it). */
 export interface UpSimRun {
@@ -171,6 +184,8 @@ export class UpRtOverlay {
   private fetchedAt = 0;
   private freshUntil = 0;
   private lastCount = 0;
+  private failCount = 0;
+  private nextFetchAt = 0;
   private inflight: Promise<void> | undefined;
   private prevAlong = new Map<string, number>();
 
@@ -181,15 +196,28 @@ export class UpRtOverlay {
     return this.lastCount > 0 && Date.now() < this.freshUntil;
   }
 
-  /** Fetch both feeds (server-side, 30 s cache). No key => silent no-op. Never throws. */
-  async refresh(nowMs: number): Promise<void> {
+  /** Fetch both feeds (server-side, 60 s cache, skipped off-hours, backed off on failure). No key => silent no-op. Never throws. */
+  async refresh(nowMs: number, runs?: UpSimRun[]): Promise<void> {
     if (this.inflight) return this.inflight;
     if (!this.key) return;
+    // Off-hours: no UP run scheduled now (derived from the timetable, never hardcoded
+    // hours) => no upstream fetch at all; sim trains serve as usual.
+    if (runs && !this.hasActiveRun(runs, torontoDaySec(nowMs))) return;
+    // Backoff gate: after a failure, do not attempt again until the backoff delay elapses.
+    if (nowMs < this.nextFetchAt) return;
     if (nowMs - this.fetchedAt < EVERY_MS && this.vehicles) return;
     this.inflight = this.load(nowMs).finally(() => {
       this.inflight = undefined;
     });
     return this.inflight;
+  }
+
+  /** True while any sim run is in its visible window at this Toronto day second (same window as trainsNow: leaves origin .. 60 s past terminus arrival). */
+  private hasActiveRun(runs: UpSimRun[], daySec: number): boolean {
+    return runs.some((r) => {
+      const first = r.legs[0], last = r.legs[r.legs.length - 1];
+      return !!first && !!last && daySec >= first.dep && daySec <= last.arr + 60;
+    });
   }
 
   private async load(nowMs: number): Promise<void> {
@@ -200,31 +228,27 @@ export class UpRtOverlay {
       this.fetchedAt = nowMs;
       this.freshUntil = Date.now() + STALE_MS;
       this.lastCount = this.vehicles.length;
+      this.failCount = 0;
+      this.nextFetchAt = 0;
+      if (tuRes.status === 'rejected') console.warn('[up-rt] trip updates failed (positions kept as fallback)');
     } else {
+      // Vehicle positions failed: back off instead of retrying at full rate. TripUpdates-only
+      // failure does not back off (positions are the feed that decides live/no-live).
       // Keep the previous cache; the timetable serves sim trains until it goes stale.
-      console.warn(`[up-rt] vehicle positions failed: ${vpRes.reason instanceof Error ? vpRes.reason.message : vpRes.reason}`);
+      this.failCount += 1;
+      this.nextFetchAt = nowMs + upBackoffMs(this.failCount);
+      console.warn(`[up-rt] vehicle positions failed: ${vpRes.reason instanceof Error ? vpRes.reason.message : vpRes.reason} (next attempt in ${upBackoffMs(this.failCount) / 1000} s)`);
       if (tuRes.status === 'rejected') console.warn('[up-rt] trip updates failed (positions kept as fallback)');
     }
   }
 
-  /** Fetch one feed as JSON. Endpoint name only in errors — never the URL (it carries the key). */
+  /** Fetch one feed as JSON (single attempt; no .json-suffix retry — that path 404s). Endpoint name only in errors — never the URL (it carries the key). */
   private async fetchFeed(feed: 'VehiclePosition' | 'TripUpdates'): Promise<UpVehicle[] | Map<string, UpStopUpdate[]>> {
-    const base = `${API}/api/V1/UP/Gtfs/Feed/${feed}?key=${encodeURIComponent(this.key!)}`;
-    for (const url of [base, base.replace(`/Feed/${feed}?`, `/Feed/${feed}.json?`)]) {
-      try {
-        const res = await politeFetch(url, { headers: { accept: 'application/json' } }, { perMinute: 4 });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as unknown;
-        const parsed = feed === 'VehiclePosition' ? parseUpVpFeed(json) : parseUpTuFeed(json);
-        const empty = Array.isArray(parsed) ? parsed.length === 0 : parsed.size === 0;
-        if (empty && url === base) continue; // maybe the format variant; try the .json URL
-        return parsed;
-      } catch (e) {
-        if (url !== base) throw e;
-        // First variant failed: fall through to the .json variant before giving up.
-      }
-    }
-    throw new Error(`${feed} unreachable`);
+    const url = `${API}/api/V1/UP/Gtfs/Feed/${feed}?key=${encodeURIComponent(this.key!)}`;
+    const res = await politeFetch(url, { headers: { accept: 'application/json' } }, { perMinute: 4 });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as unknown;
+    return feed === 'VehiclePosition' ? parseUpVpFeed(json) : parseUpTuFeed(json);
   }
 
   private buildCorridor(): Corridor | undefined {
