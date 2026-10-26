@@ -10,6 +10,7 @@ import { Suburbs } from './engine/suburbs.ts';
 import { geoLabelSpecs, Labels, type LabelSpec } from './engine/labels.ts';
 import { Network } from './engine/network.ts';
 import { Clouds, Precipitation, weatherKind, type Weather } from './engine/sky.ts';
+import { Leaves } from './engine/leaves.ts';
 import { TrainLayer, type LiveTrain } from './engine/trains.ts';
 import { PlaneLayer, type LivePlane } from './engine/planes.ts';
 import { World } from './engine/world.ts';
@@ -55,6 +56,10 @@ export class App {
     this.precip = new Precipitation(this.world);
     this.world.scene.add(this.precip.group);
     this.world.layers.add(this.precip);
+    // One-time Halloween egg: the layer itself stays invisible unless the mode is on.
+    const leaves = new Leaves();
+    this.world.scene.add(leaves.group);
+    this.world.layers.add(leaves);
     this.ui = new UI(this);
     this.world.layers.add({ update: (f) => this.ui.frame(f) });
     this.world.rig.onTap = (x, y) => this.tap(x, y);

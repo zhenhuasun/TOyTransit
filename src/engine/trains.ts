@@ -5,6 +5,43 @@ import { carModel, consist, genericSpec, MODE, trainUniforms, XRAY_STENCIL, type
 import { concatPieces, netUniforms, Network, TRACK_Y, type PathPiece } from './network.ts';
 import type { FrameInfo, Layer, World } from './world.ts';
 import { RouteHint } from './routeHint.ts';
+import { isHalloweenOn } from './halloween.ts';
+
+/** Carved jack-o'-lantern face, drawn once onto a canvas texture: orange ribs
+ * with black triangle eyes and a grinning mouth. Reads as a pumpkin, not a
+ * plain orange ball, from any angle the face side is visible. */
+function pumpkinTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ff7a1a';
+  g.fillRect(0, 0, 256, 128);
+  g.fillStyle = '#e5640f';
+  for (let x = 0; x < 256; x += 32) g.fillRect(x, 0, 10, 128);
+  g.fillStyle = '#1a0b00';
+  const eye = (cx: number) => {
+    g.beginPath();
+    g.moveTo(cx, 38);
+    g.lineTo(cx - 16, 62);
+    g.lineTo(cx + 16, 62);
+    g.closePath();
+    g.fill();
+  };
+  eye(96);
+  eye(160);
+  // Grin: a wide arc mouth with two teeth notches.
+  g.beginPath();
+  g.moveTo(92, 88);
+  g.quadraticCurveTo(128, 108, 164, 88);
+  g.lineTo(164, 96);
+  g.quadraticCurveTo(128, 114, 92, 96);
+  g.closePath();
+  g.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 const GAP = 0.8; // meters between cars
 const MISSING_GRACE_MS = 50_000;
@@ -693,8 +730,15 @@ class Marker {
   private ringMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, depthWrite: false });
   private haloMat: THREE.ShaderMaterial;
   private beamMat: THREE.ShaderMaterial;
+  /** Halloween only: a glowing carved pumpkin that replaces the gem. It has
+   * its OWN material, so the per-frame line-color set on gemMat below can
+   * never recolor it (the bug trap: gemMat.color is set every frame). */
+  private pumpkin: THREE.Mesh;
+  private pumpkinMat = new THREE.MeshLambertMaterial({ map: pumpkinTexture(), color: '#ffffff', emissive: '#ff6a00', emissiveIntensity: 0.6 });
   constructor() {
     this.gem = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0).scale(0.8, 1.25, 0.8), this.gemMat);
+    this.pumpkin = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18).scale(1, 0.78, 1), this.pumpkinMat);
+    this.pumpkin.visible = false;
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2), this.ringMat);
     this.ring.renderOrder = 5;
     this.haloMat = new THREE.ShaderMaterial({
@@ -727,12 +771,13 @@ class Marker {
     this.beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.6, 1, 24, 1, true).translate(0, 0.5, 0), this.beamMat);
     this.beam.renderOrder = 7;
     this.beam.frustumCulled = false;
-    this.group.add(this.halo, this.beam, this.gem, this.ring);
+    this.group.add(this.halo, this.beam, this.gem, this.ring, this.pumpkin);
     this.group.visible = false;
   }
   dispose() {
-    for (const m of [this.gem, this.ring, this.halo, this.beam]) m.geometry.dispose();
+    for (const m of [this.gem, this.pumpkin, this.ring, this.halo, this.beam]) m.geometry.dispose();
     this.gemMat.dispose();
+    this.pumpkinMat.dispose();
     this.ringMat.dispose();
     this.haloMat.dispose();
     this.beamMat.dispose();
@@ -749,6 +794,19 @@ class Marker {
     this.gem.position.set(t.pos.x, t.pos.y + t.model.height * scale + s * 2.2 + bob, t.pos.z);
     this.gem.scale.setScalar(s);
     this.gem.rotation.y = f.time * 1.5;
+    // Halloween only: the gem becomes a glowing carved pumpkin, keeping the
+    // same rotation + bob. This runs AFTER the per-frame gemMat color set
+    // above, and the pumpkin has its own material, so the line color can
+    // never bleed into it. Ring/halo/beam are untouched.
+    const halloween = isHalloweenOn();
+    this.gem.visible = !halloween;
+    this.pumpkin.visible = halloween;
+    if (halloween) {
+      this.pumpkin.position.copy(this.gem.position);
+      this.pumpkin.scale.setScalar(s);
+      this.pumpkin.rotation.y = f.time * 1.5;
+      this.pumpkinMat.emissiveIntensity = 0.5 + 0.3 * Math.sin(f.time * 3);
+    }
     const k = (f.time * 0.8) % 1;
     this.ring.position.set(t.mid.x, t.mid.y - t.model.height * scale * 0.5 + 0.3, t.mid.z);
     this.ring.scale.setScalar(s * (1.5 + k * 5));

@@ -204,6 +204,7 @@ body.touring .tour-cta { opacity: 0; pointer-events: none; }
 .pill-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px 7px 11px; border-radius: 999px; background: var(--paper-solid); box-shadow: var(--shadow-sm); font: 600 13px var(--display); color: var(--ink); transition: transform 0.15s; }
 .pill-btn:hover { transform: translateY(-1px) rotate(-1deg); }
 .fleet-btn { color: #ff5a5f; }
+.halloween-btn.on { background: #ff7a1a; color: #fff; }
 .search-btn kbd { margin-left: 2px; }
 .logo { cursor: pointer; }
 

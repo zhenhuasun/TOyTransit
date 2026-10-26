@@ -20,6 +20,7 @@ import { restoreSound, setSound, sfx, soundOn, soundPrefs } from './sound.ts';
 import { Soundscape } from './soundscape.ts';
 import { isPhone, makeSheet, TOUCH } from './sheet.ts';
 import { replay, reveal, shown, tweenNumber } from './anim.ts';
+import { currentSkyStyle, isHalloweenOn, isHalloweenWindow, setHalloween } from '../engine/halloween.ts';
 import { buildIndex, search, type Hit } from './search.ts';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -130,6 +131,7 @@ export class UI {
           <button class="live" title="Data sources"><i></i><span class="live-text">connecting…</span></button>
           <button class="fleet-btn pill-btn" title="Meet the fleet (G)">${FLEET_SVG}<span>Fleet</span></button>
           <button class="search-btn pill-btn" title="Search stations, lines & vehicles (/)">${SEARCH_SVG}<span>Search</span><kbd>/</kbd></button>
+          <button class="halloween-btn pill-btn" title="Happy Halloween">🎃<span>Happy Halloween</span></button>
         </div>
         <div class="sources" hidden></div>
       </header>
@@ -198,6 +200,7 @@ export class UI {
       app.home();
     });
     this.$('.search-btn').addEventListener('click', () => this.openSearch());
+    this.$('.halloween-btn').addEventListener('click', () => this.toggleHalloween());
     this.$('.dock').addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-dock]');
       if (!b) return;
@@ -280,9 +283,57 @@ export class UI {
     this.renderSkyBtn();
     restoreSound();
     this.renderSoundBtn();
+    // Halloween egg: apply a stored "on" from a previous visit (the date gate
+    // inside currentSkyStyle still wins after expiry), and set the button state.
+    this.app.world.atmosphere.style = currentSkyStyle(activeTheme().skyStyle);
+    this.syncHalloweenButton();
     addEventListener('keydown', (e) => this.key(e));
     if (isPhone()) this.$('.legend').classList.add('collapsed');
     void TOUCH;
+  }
+
+  // -------------------------------------------------------------------------
+  // Halloween egg (one-time, date-gated — see engine/halloween.ts).
+
+  private lastHalloweenOn: boolean | null = null;
+
+  private toggleHalloween(): void {
+    if (!isHalloweenWindow(new Date())) return;
+    const on = !isHalloweenOn();
+    setHalloween(on);
+    this.app.world.atmosphere.style = currentSkyStyle(activeTheme().skyStyle);
+    this.syncHalloweenButton();
+  }
+
+  private syncHalloweenButton(): void {
+    const btn = this.$('.halloween-btn') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.hidden = !isHalloweenWindow(new Date());
+    const on = isHalloweenOn();
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    this.lastHalloweenOn = on;
+  }
+
+  /** Runs every frame: hides the button and reverts the mode once expired. */
+  private tickHalloween(): void {
+    if (isHalloweenWindow(new Date())) {
+      const on = isHalloweenOn();
+      if (on !== this.lastHalloweenOn) this.syncHalloweenButton();
+      return;
+    }
+    // Past the window: a stored "on" (including one left over from before
+    // this page load) must revert, and the theme sky must come back.
+    if (this.lastHalloweenOn !== false) {
+      setHalloween(false);
+      this.app.world.atmosphere.style = activeTheme().skyStyle;
+    }
+    this.lastHalloweenOn = false;
+    const btn = this.$('.halloween-btn') as HTMLButtonElement | null;
+    if (btn) {
+      btn.hidden = true;
+      btn.classList.remove('on');
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -351,7 +402,7 @@ export class UI {
     rememberTheme(t.id);
     this.app.world.setPost(t.post);
     setLook(t.look, instant);
-    this.app.world.atmosphere.style = t.skyStyle;
+    this.app.world.atmosphere.style = currentSkyStyle(t.skyStyle);
     this.app.world.atmosphere.key.shadow.radius = t.shadowRadius ?? 3;
     this.app.applySceneTheme();
     this.skyMode = t.sky ?? 'live';
@@ -1669,6 +1720,7 @@ export class UI {
 
   frame(f: FrameInfo) {
     this.soundscape.update(f);
+    this.tickHalloween();
     // On phones, keep whatever you're looking at centered in the map area above an open sheet.
     let shift = 0;
     if (isPhone()) {
