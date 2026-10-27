@@ -649,6 +649,8 @@ interface Run {
   k: number;
   pts: number[];
   tile: number;
+  /** Bridge segment (transportation brunnel === 'bridge'); ground segments omit it. */
+  b?: 1;
 }
 
 /** Joins runs that were cut at tile edges, and runs of the same class meeting end-to-end. */
@@ -675,7 +677,7 @@ function mergeRuns(runs: Run[], vLines: Set<number>, hLines: Set<number>, tol: n
       let best = -1, bestD = tol;
       for (let j = i + 1; j < list.length && list[j].t - a.t <= tol; j++) {
         const b = list[j];
-        if (taken.has(j) || runs[b.run].tile === runs[a.run].tile || runs[b.run].k !== runs[a.run].k) continue;
+        if (taken.has(j) || runs[b.run].tile === runs[a.run].tile || runs[b.run].k !== runs[a.run].k || runs[b.run].b !== runs[a.run].b) continue;
         if (Math.abs(b.t - a.t) <= bestD) { bestD = Math.abs(b.t - a.t); best = j; }
       }
       if (best < 0) continue;
@@ -693,7 +695,7 @@ function mergeRuns(runs: Run[], vLines: Set<number>, hLines: Set<number>, tol: n
   const ends = new Map<string, number[]>();
   const endKey = (code: number) => {
     const p = runs[code >> 1].pts;
-    return `${runs[code >> 1].k}:${code & 1 ? `${p[p.length - 2]},${p[p.length - 1]}` : `${p[0]},${p[1]}`}`;
+    return `${runs[code >> 1].k}:${runs[code >> 1].b ?? 0}:${code & 1 ? `${p[p.length - 2]},${p[p.length - 1]}` : `${p[0]},${p[1]}`}`;
   };
   for (let c = 0; c < runs.length * 2; c++) {
     const k = endKey(c);
@@ -768,7 +770,7 @@ function mergeRuns(runs: Run[], vLines: Set<number>, hLines: Set<number>, tol: n
       if (p < 0 || used[p >> 1]) break;
       code = p ^ 1;
     }
-    out.push({ k: runs[i].k, pts, tile: -1 });
+    out.push({ k: runs[i].k, b: runs[i].b, pts, tile: -1 });
   }
   return out;
 }
@@ -1023,18 +1025,18 @@ async function buildCity(city: CityId) {
         for (const g of geom) {
           for (const run of clipLine(g, clip)) {
             if (isRail) railRuns.push({ k: 0, pts: run, tile: tileId });
-            else if (k !== 3) roadRuns.push({ k, pts: run, tile: tileId });
+            else if (k !== 3) roadRuns.push({ k, pts: run, tile: tileId, ...(p.brunnel === 'bridge' ? { b: 1 as const } : {}) });
             else {
               // Tertiary roads only inside the core areas (cut into inside runs).
               let cur: number[] = [];
               for (let j = 0; j < run.length; j += 2) {
                 if (inCore(run[j], run[j + 1], 40)) cur.push(run[j], run[j + 1]);
                 else {
-                  if (cur.length >= 4) roadRuns.push({ k: 3, pts: cur, tile: tileId });
+                  if (cur.length >= 4) roadRuns.push({ k: 3, pts: cur, tile: tileId, ...(p.brunnel === 'bridge' ? { b: 1 as const } : {}) });
                   cur = [];
                 }
               }
-              if (cur.length >= 4) roadRuns.push({ k: 3, pts: cur, tile: tileId });
+              if (cur.length >= 4) roadRuns.push({ k: 3, pts: cur, tile: tileId, ...(p.brunnel === 'bridge' ? { b: 1 as const } : {}) });
             }
           }
         }
@@ -1207,9 +1209,9 @@ async function buildCity(city: CityId) {
         if (n && out[n - 2] === x && out[n - 1] === y) continue;
         out.push(x, y);
       }
-      return out.length >= 4 && lineLength(out) >= minLen ? [{ k: r.k, pts: out }] : [];
+      return out.length >= 4 && lineLength(out) >= minLen ? [{ k: r.k, b: r.b, pts: out }] : [];
     });
-  const roads = finishLines(roadRuns, 2.5, 30).map((r) => ({ k: r.k as 0 | 1 | 2 | 3, pts: r.pts }));
+  const roads = finishLines(roadRuns, 2.5, 30).map((r) => ({ k: r.k as 0 | 1 | 2 | 3, pts: r.pts, ...(r.b ? { b: 1 as const } : {}) }));
   roads.sort((a, b) => b.k - a.k);
   const rail = finishLines(railRuns, 2.5, 60).map((r) => r.pts);
 

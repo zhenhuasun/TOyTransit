@@ -141,7 +141,7 @@ export interface GeoData {
   sand?: Polygon[]; // beaches
   airports?: Polygon[]; // aerodrome areas
   runways?: Polygon[]; // runway + taxiway surfaces
-  roads: { k: 0 | 1 | 2 | 3; pts: Flat }[]; // k: 0 motorway, 1 trunk/primary, 2 secondary, 3 tertiary
+  roads: { k: 0 | 1 | 2 | 3; pts: Flat; b?: 1 }[]; // k: 0 motorway, 1 trunk/primary, 2 secondary, 3 tertiary; b: bridge segment
   rail?: Flat[]; // other (non-modelled) railway lines, for texture
   labels: GeoLabel[];
 }
