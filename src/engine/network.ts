@@ -43,6 +43,70 @@ export interface PathPiece {
 
 const key = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
 
+/**
+ * Ramp length (meters) over which an el level change is spread. A binary el step
+ * makes each train car jump as it crosses one short span; grading the step over
+ * 100 m turns it into a smooth grade for both the track ribbon and the train
+ * heights (both read the same SegRec el, so they can never disagree).
+ */
+const RAMP_M = 100;
+
+/**
+ * Replace el steps inside one segment with linear ramps centered on each flip.
+ * Construction: every flip from A to B at flip position fp contributes two
+ * control points, (fp - RAMP_M/2, A) and (fp + RAMP_M/2, B); the graded value at
+ * each existing point is the piecewise-linear interpolation through all control
+ * points sorted by distance (no points are added). Sorting is what makes
+ * overlapping windows compose CONTINUOUSLY: where two windows overlap, the
+ * shared level pins the join flat instead of leaving a jump at a window edge
+ * (the naive sequential-overwrite version had exactly that defect: up to ~0.5
+ * levels of value jump at window edges). Where points are sparser than the
+ * window, the effective grade is gentler (spread over the bracketing span) —
+ * still smooth, never a step. Points outside all windows keep their level.
+ * Output is clamped to [-1, 1]. The tunnel display rule is untouched (heights
+ * still clamp el at 0), so a -1→0 grade shows no fake ramp at tunnel portals.
+ */
+function gradeEl(el: Float32Array, cum: Float32Array): void {
+  const n = el.length;
+  if (n < 2) return;
+  const orig = Float32Array.from(el);
+  const ctrl: [number, number][] = [];
+  for (let i = 0; i < n - 1; i++) {
+    if (orig[i] === orig[i + 1]) continue;
+    const fp = (cum[i] + cum[i + 1]) / 2;
+    ctrl.push([fp - RAMP_M / 2, orig[i]], [fp + RAMP_M / 2, orig[i + 1]]);
+  }
+  if (!ctrl.length) return;
+  ctrl.sort((a, b) => a[0] - b[0]);
+  const dedup: [number, number][] = [];
+  for (const c of ctrl) {
+    if (dedup.length && dedup[dedup.length - 1][0] === c[0]) dedup[dedup.length - 1] = c;
+    else dedup.push(c);
+  }
+  for (let j = 0; j < n; j++) {
+    const d = cum[j];
+    if (d <= dedup[0][0]) {
+      el[j] = dedup[0][1];
+      continue;
+    }
+    if (d >= dedup[dedup.length - 1][0]) {
+      el[j] = dedup[dedup.length - 1][1];
+      continue;
+    }
+    let lo = 0;
+    let hi = dedup.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (dedup[mid][0] <= d) lo = mid;
+      else hi = mid;
+    }
+    const [d0, v0] = dedup[lo];
+    const [d1, v1] = dedup[hi];
+    el[j] = v0 + (v1 - v0) * ((d - d0) / (d1 - d0));
+  }
+  for (let j = 0; j < n; j++) el[j] = Math.max(-1, Math.min(1, el[j]));
+}
+
 export class Network implements Layer {
   readonly group = new THREE.Group();
   readonly lines = new Map<string, LineDef>();
@@ -107,6 +171,10 @@ export class Network implements Layer {
         el[i] = seg.el ? seg.el[i] : 0;
         if (i) cum[i] = cum[i - 1] + Math.hypot(x[i] - x[i - 1], z[i] - z[i - 1]);
       }
+      // Grade el steps into ramps HERE: this SegRec el is the single array both
+      // the track ribbons (buildTracks) and the train paths (pieces/orient) read,
+      // so grading here keeps ribbon and train in agreement by construction.
+      gradeEl(el, cum);
       const lines = seg.lines.filter((l) => this.lines.has(l)).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
       const colors: string[] = [];
       for (const l of lines) {
