@@ -349,7 +349,18 @@ export class Network implements Layer {
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(g) * 0.3 + mix(vec3(0.62), vec3(0.2, 0.24, 0.36), uNight), 0.82);
           } else if (uFocusN > 0) {
             diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.45, smoothstep(0.7, 0.9, a) * (1.0 - uDetail));
-          }`,
+          }
+          // Tunnel treatment, on top of every band kind: dim overall + a dashed
+          // centerline. tunF fades in across portal ramps (graded el crosses -0.5
+          // mid-ramp by construction), so the tunnel look strengthens gradually
+          // instead of switching at a segment end. Bus wash already has its own
+          // dash, so it gets dimming only; the new dash is gated by uDetail like
+          // other close detail, so far away a tunnel band reads as dim only.
+          float tunF = 1.0 - smoothstep(-0.65, -0.35, vElev);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.55, tunF);
+          float tunDash = step(0.5, fract(vDist / (8.0 * uScale)));
+          float tunCenter = 1.0 - smoothstep(0.03 * uScale, 0.08 * uScale, abs(across));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.88, 0.82), tunDash * tunCenter * (1.0 - isRoad) * tunF * uDetail * 0.85);`,
         )
         .replace(
           '#include <emissivemap_fragment>',
