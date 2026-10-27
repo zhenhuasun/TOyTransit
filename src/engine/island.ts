@@ -59,6 +59,9 @@ export const LAYER = { land: -20, green: -19, airport: -18, sand: -17, park: -16
 
 const Y = { green: 0.3, airport: 0.35, park: 0.5, sand: 0.45, runway: 0.7, water: 0.9, shore: 1.1, rail: 1.25, road: 1.4 };
 
+/** Lift of bridge road decks above ground roads (tunable; the eye check after deploy decides the final value). */
+const BRIDGE_LIFT = 10;
+
 // ---------------------------------------------------------------------------
 // Polygon meshes
 // ---------------------------------------------------------------------------
@@ -664,20 +667,22 @@ export class Island implements Layer {
         const v = -(x - c.x) * c.dy + (y - c.y) * c.dx;
         return Math.abs(u) < c.half && Math.abs(v) < c.width;
       });
-    const pieces: { pts: number[]; kind: number; color: THREE.Color }[] = [];
+    const pieces: { pts: number[]; kind: number; color: THREE.Color; bridge: boolean }[] = [];
     for (const r of this.geo.roads) {
       let cur: number[] = [];
       for (let i = 0; i < r.pts.length; i += 2) {
         if (this.roadCuts.length && cut(r.pts[i], r.pts[i + 1])) {
-          if (cur.length >= 4) pieces.push({ pts: cur, kind: r.k, color: roadCols[r.k] });
+          if (cur.length >= 4) pieces.push({ pts: cur, kind: r.k, color: roadCols[r.k], bridge: r.b === 1 });
           cur = [];
         } else cur.push(r.pts[i], r.pts[i + 1]);
       }
-      if (cur.length >= 4) pieces.push({ pts: cur, kind: r.k, color: roadCols[r.k] });
+      if (cur.length >= 4) pieces.push({ pts: cur, kind: r.k, color: roadCols[r.k], bridge: r.b === 1 });
     }
     // Minor roads first so motorways paint on top at interchanges.
     pieces.sort((a, b) => b.kind - a.kind);
-    const roads = buildRibbons(pieces, Y.road);
+    const groundPieces = pieces.filter((p) => !p.bridge);
+    const bridgePieces = pieces.filter((p) => p.bridge);
+    const roads = buildRibbons(groundPieces, Y.road);
     const roadMat = ribbonMaterial(
       { vertexColors: true },
       'aKind < 0.5 ? uRoadW.x : aKind < 1.5 ? uRoadW.y : aKind < 2.5 ? uRoadW.z : uRoadW.w',
@@ -705,6 +710,18 @@ export class Island implements Layer {
     roadMesh.receiveShadow = true;
     roadMesh.renderOrder = LAYER.road;
     this.group.add(roadMesh);
+
+    // Bridge decks: same look, lifted — and painted AFTER train bodies (renderOrder 0)
+    // and track ribbons (renderOrder 1), so a train under a road bridge is hidden by
+    // the deck instead of drawing over it. Trade-off, accepted: on the rare crossing
+    // where a road bridge spans an elevated track, the road bridge wins the paint.
+    if (bridgePieces.length) {
+      const bridgeGeo = buildRibbons(bridgePieces, Y.road + BRIDGE_LIFT);
+      const bridgeMesh = new THREE.Mesh(bridgeGeo, roadMat);
+      bridgeMesh.receiveShadow = true;
+      bridgeMesh.renderOrder = 2;
+      this.group.add(bridgeMesh);
+    }
 
     if (this.geo.rail?.length) {
       const rail = buildRibbons(this.geo.rail.map((pts) => ({ pts })), Y.rail);
