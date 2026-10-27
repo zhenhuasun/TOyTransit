@@ -122,6 +122,8 @@ export class TrainLayer implements Layer {
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private up = new THREE.Vector3(0, 1, 0);
+  private qPitch = new THREE.Quaternion();
+  private zAxis = new THREE.Vector3(0, 0, 1);
   private color = new THREE.Color();
   selected: LiveTrain | null = null;
   hovered: LiveTrain | null = null;
@@ -517,12 +519,23 @@ export class TrainLayer implements Layer {
         const z = (A.z + B.z) / 2 + nz * lat;
         const el = Math.max(0, (A.el + B.el) / 2);
         const y = TRACK_Y + 0.15 + el * elevH;
+        // Pitch: tilt the car to the slope between its front/rear bogie
+        // samples, using the SAME display heights that position the car (so
+        // car and ribbon agree at every zoom exaggeration). Model forward is
+        // +X, lateral is +Z (stockModel.ts: "+x = forward (cab nose), y = up,
+        // z = lateral"), so a positive rotation about local +Z raises the
+        // nose. Flipped cars face backward, so their pitch sign inverts.
+        const yA = TRACK_Y + 0.15 + Math.max(0, A.el) * elevH;
+        const yB = TRACK_Y + 0.15 + Math.max(0, B.el) * elevH;
+        const pitch = Math.atan2(yA - yB, Math.hypot(A.x - B.x, A.z - B.z) || 1) * (b.flip ? -1 : 1);
         let c = t.centers[k];
         if (!c) c = t.centers[k] = new THREE.Vector3();
         c.set(x, y + t.model.height * scale * 0.5, z);
         if (hidden) continue;
         const heading = Math.atan2(-hz, hx) + (b.flip ? Math.PI : 0);
         this.q.setFromAxisAngle(this.up, heading);
+        this.qPitch.setFromAxisAngle(this.zAxis, pitch);
+        this.q.multiply(this.qPitch);
         this.m4.compose(new THREE.Vector3(x, y, z), this.q, new THREE.Vector3(lenScale * pop, scale * pop * boost, scale * pop * boost));
         const batch = this.batches.get(`${t.spec.id}|${b.variant}`)!;
         batch.mesh.setMatrixAt(batch.n, this.m4);
