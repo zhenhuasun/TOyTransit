@@ -53,6 +53,10 @@ export class Network implements Layer {
   readonly leftHand: boolean;
   private platforms!: THREE.InstancedMesh;
   private canopies!: THREE.InstancedMesh;
+  /** Tier 2: one small shelter roof per streetcar stop (fixed size, no deck). */
+  private shelters!: THREE.InstancedMesh;
+  /** Tier 3: one small dot per bus stop (reuses the far-zoom dot geometry). */
+  private stopDiscs!: THREE.InstancedMesh;
   private pillars: THREE.InstancedMesh | null = null;
   private dots!: THREE.InstancedMesh;
   private dotMat!: THREE.MeshBasicMaterial;
@@ -291,6 +295,21 @@ export class Network implements Layer {
   }
 
   /**
+   * Station tier for platform clutter: 1 = full deck + canopy (subway/LRT/UP/ferry),
+   * 2 = small shelter sign (streetcar), 3 = dot only (bus). On mixed stops the heaviest
+   * system wins, so a subway station that buses also serve keeps its deck.
+   */
+  private tierOfStation(st: StationDef): number {
+    let tier = 3;
+    for (const id of st.lines) {
+      const sys = this.lines.get(id)?.system;
+      if (sys === 'subway' || sys === 'lrt' || sys === 'up' || sys === 'ferry') return 1;
+      if (sys === 'streetcar') tier = 2;
+    }
+    return tier;
+  }
+
+  /**
    * Side platforms for each station: one pair per group of tracks that arrive in the same direction at the
    * same spot. Each pair sits on the actual track (a station's point can be the middle of a big interchange),
    * is as long as the longest train that stops there, and only gets a roof above ground.
@@ -308,7 +327,23 @@ export class Network implements Layer {
       lines: Set<string>;
       ends: { r: SegRec; atStart: boolean }[];
     };
+    const shelterSpots: { x: number; z: number; color: string }[] = [];
+    const stopSpots: { x: number; z: number }[] = [];
     for (const st of this.stations.values()) {
+      // Tiering: only Tier 1 stations get decks + canopies (the code below is unchanged
+      // for them). Streetcar stops get one small shelter sign each; bus stops get no deck
+      // at all, just a dot built below. This is what removes the intersection clutter:
+      // bus stops are the large majority of stations.
+      const tier = this.tierOfStation(st);
+      if (tier !== 1) {
+        if (tier === 2) {
+          const sc = st.lines.find((id) => this.lines.get(id)?.system === 'streetcar') ?? st.lines[0];
+          shelterSpots.push({ x: st.pos.x, z: st.pos.z, color: this.lines.get(sc)?.color ?? '#888888' });
+        } else {
+          stopSpots.push({ x: st.pos.x, z: st.pos.z });
+        }
+        continue;
+      }
       const recs = this.byStation.get(st.id) ?? [];
       const groups: Group[] = [];
       for (const r of recs) {
@@ -484,6 +519,37 @@ export class Network implements Layer {
     this.dots.frustumCulled = false;
     this.dots.renderOrder = 3;
     this.group.add(this.dots);
+
+    // Tier 2 shelters: a small fixed-size roof on four posts per streetcar stop (no deck,
+    // no train-length canopy). Tier 3 stops: one small dot per bus stop, reusing the
+    // far-zoom dot geometry. Both show only at close zoom, like platforms.
+    {
+      const post = new THREE.BoxGeometry(0.15, 3.0, 0.15).translate(0, 1.5, 0);
+      const roof = new THREE.BoxGeometry(2.6, 0.15, 2.6).translate(0, 3.05, 0);
+      const shelterGeo = mergeBoxes([
+        ...[-1.05, 1.05].flatMap((x) => [-1.05, 1.05].map((z) => paint(post.clone().translate(x, 0, z), 0.25))),
+        paint(roof, 1),
+      ]);
+      this.shelters = new THREE.InstancedMesh(shelterGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), shelterSpots.length);
+      const m = new THREE.Matrix4();
+      shelterSpots.forEach((s, i) => {
+        m.makeTranslation(s.x, TRACK_Y, s.z);
+        this.shelters.setMatrixAt(i, m);
+        this.shelters.setColorAt(i, new THREE.Color(s.color));
+      });
+      this.shelters.instanceMatrix.needsUpdate = true;
+      if (this.shelters.instanceColor) this.shelters.instanceColor.needsUpdate = true;
+      this.shelters.castShadow = true;
+      this.shelters.frustumCulled = false;
+      this.stopDiscs = new THREE.InstancedMesh(dotGeo, this.dotMat, stopSpots.length);
+      stopSpots.forEach((s, i) => {
+        m.makeScale(2.2, 0.6, 2.2).setPosition(s.x, TRACK_Y, s.z);
+        this.stopDiscs.setMatrixAt(i, m);
+      });
+      this.stopDiscs.instanceMatrix.needsUpdate = true;
+      this.stopDiscs.frustumCulled = false;
+      this.group.add(this.shelters, this.stopDiscs);
+    }
   }
 
   private buildPillars() {
@@ -699,6 +765,8 @@ export class Network implements Layer {
     this.platforms.visible = !far;
     this.canopies.visible = this.canopies.visible && !far;
     this.dots.visible = far;
+    this.shelters.visible = !far;
+    this.stopDiscs.visible = !far;
     if (far) this.layoutDots(f.mpp);
     if (Math.abs(scale - this.lastScale) > 0.01 || this.lastScale < 0) {
       this.lastScale = scale;
