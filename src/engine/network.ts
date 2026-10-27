@@ -145,6 +145,7 @@ export class Network implements Layer {
     const railInputs: TrackInput[] = [];
     const busInputs: TrackInput[] = [];
     const systemOf = (id: string) => this.lines.get(id)?.system;
+    const HEAVY_RAIL = ['subway', 'lrt', 'up', 'rail'];
     for (const r of this.segs) {
       const pts = r.seg.pts;
       let level = 0;
@@ -153,15 +154,22 @@ export class Network implements Layer {
         const col = r.colors[i];
         const bandLines = r.seg.lines.filter((id) => this.lines.get(id)?.color.toLowerCase() === col);
         // kind 1 = road/water ribbon (flat, no ballast/sleepers/rails): every line on this band is
-        // a bus or a ferry. Anything with a rail line on it keeps the rail look.
+        // a bus or a ferry. kind 2 = grooved rail (flat asphalt + twin steel strips at true
+        // gauge): at least one streetcar line and no heavy-rail line (subway/LRT/UP/rail) on the
+        // band — a bus sharing a streetcar street still reads as grooved pavement, which is
+        // what the street physically is. Anything else keeps the rail look (kind 0).
         const road = bandLines.length > 0 && bandLines.every((id) => systemOf(id) === 'bus' || systemOf(id) === 'ferry');
         const busOnly = bandLines.length > 0 && bandLines.every((id) => systemOf(id) === 'bus');
+        const grooved =
+          bandLines.length > 0 &&
+          bandLines.some((id) => systemOf(id) === 'streetcar') &&
+          !bandLines.some((id) => HEAVY_RAIL.includes(systemOf(id) ?? ''));
         (busOnly ? busInputs : railInputs).push({
           pts,
           color: new THREE.Color(col),
           lane: i - (r.colors.length - 1) / 2,
           elev: r.el,
-          kind: road ? 1 : 0,
+          kind: road ? 1 : grooved ? 2 : 0,
           prio: (level + 1) * 1000 - (lineRank.get(col) ?? 999),
         });
       }
@@ -233,13 +241,28 @@ export class Network implements Layer {
           near = mix(near, vec3(0.86, 0.88, 0.92), rail);
           near = mix(near, inkCol, smoothstep(0.8, 0.86, a));
           // Road/water ribbons (bus, ferry): flat asphalt with line-color edge stripes and a
-          // dashed center line — never ballast, sleepers or rails.
-          float isRoad = step(0.5, vKind);
+          // dashed center line — never ballast, sleepers or rails. Grooved rail (kind 2) is
+          // also flat asphalt, plus twin steel strips at true gauge; kinds are exclusive
+          // ranges, so kind 2 never reads as road here.
+          float isRoad = step(0.5, vKind) * (1.0 - step(1.5, vKind));
+          float isGrooved = step(1.5, vKind);
           vec3 road = vec3(0.24, 0.24, 0.26);
           road = mix(road, inkCol, smoothstep(0.8, 0.86, a));
           float dash = step(0.5, fract(vDist / (8.0 * uScale)));
           road = mix(road, vec3(0.88, 0.88, 0.82), dash * (1.0 - smoothstep(0.03 * uScale, 0.08 * uScale, abs(across))) * 0.85);
           near = mix(near, road, isRoad);
+          // Grooved rail: asphalt base with line-color edge stripes (like road), plus two
+          // steel strips at ±0.72 m (standard gauge 1435 mm half). Strip edges are fwidth
+          // anti-aliased so they fade softly instead of shimmering as they approach
+          // sub-pixel size; the uDetail gate below removes all close detail at far zoom,
+          // so far away a grooved band just reads as pavement, which is correct.
+          vec3 grooved = tunnel ? vec3(0.18, 0.18, 0.20) : vec3(0.24, 0.24, 0.26);
+          grooved = mix(grooved, inkCol, smoothstep(0.8, 0.86, a));
+          float gw = 0.07 * uScale;
+          float gfw = fwidth(across);
+          float groove = 1.0 - smoothstep(gw - gfw, gw + gfw, abs(abs(across) - 0.72));
+          grooved = mix(grooved, vec3(0.86, 0.88, 0.92), groove);
+          near = mix(near, grooved, isGrooved);
           diffuseColor.rgb = mix(far, near, uDetail * uLk_lineDetail);
           // Glowing styles light the line from within; a dim lit surface keeps overlaps from summing to white.
           diffuseColor.rgb *= 1.0 - 0.75 * uLk_lineGlow;
