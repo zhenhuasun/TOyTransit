@@ -121,6 +121,11 @@ export class Network implements Layer {
   private shelters!: THREE.InstancedMesh;
   /** Tier 3: one small dot per bus stop (reuses the far-zoom dot geometry). */
   private stopDiscs!: THREE.InstancedMesh;
+  /** Tunnel portals: one frame + dark mouth per -0.5 el crossing, all modes. */
+  private portals!: THREE.InstancedMesh;
+  private portalMouths!: THREE.InstancedMesh;
+  /** Portal spots, kept for verification (x/z world, yaw, segment ends). */
+  portalSpots: { x: number; z: number; angle: number; from: string; to: string }[] = [];
   private pillars: THREE.InstancedMesh | null = null;
   private dots!: THREE.InstancedMesh;
   private dotMat!: THREE.MeshBasicMaterial;
@@ -197,6 +202,7 @@ export class Network implements Layer {
     this.buildTracks();
     this.buildStations();
     this.buildPillars();
+    this.buildPortals();
   }
 
   // -------------------------------------------------------------------------
@@ -662,6 +668,64 @@ export class Network implements Layer {
     this.group.add(this.pillars);
   }
 
+  private buildPortals() {
+    // Every -0.5 crossing of GRADED el is a tunnel mouth. Graded el crosses
+    // -0.5 exactly once per flip, mid-ramp, so portals sit on the ramp, not
+    // at segment ends. One frame per directional segment: a double-track
+    // portal appears as a pair, one per track. No station-proximity skip:
+    // a mouth at a platform is physically correct (e.g. Old Mill, whose
+    // platform straddles the tunnel mouth), and the frame is vertical and
+    // 0.8 m deep along-track, so it reads as a mouth even over a deck.
+    const spots: { x: number; z: number; angle: number; from: string; to: string }[] = [];
+    for (const r of this.segs) {
+      for (let i = 0; i < r.el.length - 1; i++) {
+        const a = r.el[i], b = r.el[i + 1];
+        if ((a < -0.5) === (b < -0.5)) continue;
+        const t = (-0.5 - a) / (b - a);
+        const x = r.x[i] + (r.x[i + 1] - r.x[i]) * t;
+        const z = r.z[i] + (r.z[i + 1] - r.z[i]) * t;
+        const dx = r.x[i + 1] - r.x[i], dz = r.z[i + 1] - r.z[i];
+        const dl = Math.hypot(dx, dz) || 1;
+        spots.push({ x, z, angle: Math.atan2(dx / dl, dz / dl), from: r.seg.from, to: r.seg.to });
+      }
+    }
+    this.portalSpots = spots;
+    // Frame: two posts + top beam, merged into one geometry (local frame:
+    // x lateral, z along-track, y up from ground). 11 m span clears the
+    // track and a train; the beam clears a train top (TRACK_Y + ~4 m).
+    const paint = (g: THREE.BufferGeometry, c: number) => {
+      const n = g.getAttribute('position').count;
+      g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(c), 3));
+      return g;
+    };
+    const post = new THREE.BoxGeometry(0.8, 8, 0.8).translate(0, 4, 0);
+    const beam = new THREE.BoxGeometry(12.6, 0.8, 0.8).translate(0, 8, 0);
+    const frameGeo = mergeBoxes([
+      paint(post.clone().translate(-5.5, 0, 0), 0.55),
+      paint(post.clone().translate(5.5, 0, 0), 0.55),
+      paint(beam, 0.6),
+    ]);
+    this.portals = new THREE.InstancedMesh(frameGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), spots.length);
+    // Dark mouth: an opaque vertical plane across the track. Opaque + depth
+    // write means a train behind it is occluded by the depth test, so it
+    // reads as entering darkness, from either side (DoubleSide).
+    const mouthGeo = new THREE.PlaneGeometry(11, 7.5);
+    this.portalMouths = new THREE.InstancedMesh(mouthGeo, new THREE.MeshLambertMaterial({ color: '#0a0a10', side: THREE.DoubleSide }), spots.length);
+    const m = new THREE.Matrix4();
+    spots.forEach((s, i) => {
+      m.makeRotationY(s.angle).setPosition(s.x, 0, s.z);
+      this.portals.setMatrixAt(i, m);
+      m.makeRotationY(s.angle).setPosition(s.x, 3.75, s.z);
+      this.portalMouths.setMatrixAt(i, m);
+    });
+    this.portals.instanceMatrix.needsUpdate = true;
+    this.portalMouths.instanceMatrix.needsUpdate = true;
+    this.portals.castShadow = true;
+    this.portals.frustumCulled = false;
+    this.portalMouths.frustumCulled = false;
+    this.group.add(this.portals, this.portalMouths);
+  }
+
   private sampleSeg(r: SegRec, d: number) {
     let i = 1;
     while (i < r.cum.length - 1 && r.cum[i] < d) i++;
@@ -846,6 +910,8 @@ export class Network implements Layer {
     this.dots.visible = far;
     this.shelters.visible = !far;
     this.stopDiscs.visible = !far;
+    this.portals.visible = !far;
+    this.portalMouths.visible = !far;
     if (far) this.layoutDots(f.mpp);
     if (Math.abs(scale - this.lastScale) > 0.01 || this.lastScale < 0) {
       this.lastScale = scale;

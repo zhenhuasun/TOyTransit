@@ -518,6 +518,10 @@ export class TrainLayer implements Layer {
         const x = (A.x + B.x) / 2 + nx * lat;
         const z = (A.z + B.z) / 2 + nz * lat;
         const el = Math.max(0, (A.el + B.el) / 2);
+        // Tunnel ghost: raw (unclamped) average el, per car, so a train
+        // straddling a portal ghosts car by car. Selection wins over tunnel
+        // (inspection beats state); focus/dimmed do not (tunnel is physical).
+        const carMode = (A.el + B.el) / 2 < -0.5 && t !== this.selected ? MODE.tunnel : mode;
         const y = TRACK_Y + 0.15 + el * elevH;
         // Pitch: tilt the car to the slope between its front/rear bogie
         // samples, using the SAME display heights that position the car (so
@@ -540,7 +544,7 @@ export class TrainLayer implements Layer {
         const batch = this.batches.get(`${t.spec.id}|${b.variant}`)!;
         batch.mesh.setMatrixAt(batch.n, this.m4);
         batch.mesh.setColorAt(batch.n, this.color);
-        batch.mode.array[batch.n] = mode;
+        batch.mode.array[batch.n] = carMode;
         batch.n++;
         if (k === 0) {
           t.pos.set(x, y, z);

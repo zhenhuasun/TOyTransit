@@ -760,7 +760,7 @@ function makeAtlas(spec: StockSpec, d: Dims) {
 export const trainUniforms = { uNight: { value: 0 }, uFar: { value: 0 }, uTime: { value: 0 } };
 
 /** Per-instance display mode (the `aMode` instanced attribute). */
-export const MODE = { normal: 0, selected: 1, lineFocus: 2, dimmed: 3 } as const;
+export const MODE = { normal: 0, selected: 1, lineFocus: 2, dimmed: 3, tunnel: 4 } as const;
 
 /** Stencil: buildings write 1, trains write 0, the x-ray pass draws only over 1. */
 export const OCCLUDER_STENCIL = {
@@ -787,7 +787,7 @@ function makeMaterial(map: THREE.Texture, emissiveMap: THREE.Texture) {
     sh.uniforms.uTime = trainUniforms.uTime;
     Object.assign(sh.uniforms, lookUniforms);
     applyToon(sh);
-    // aMode: 0 normal, 1 selected, 2 on the focused line, 3 dimmed (another line is focused).
+    // aMode: 0 normal, 1 selected, 2 on the focused line, 3 dimmed (another line is focused), 4 tunnel.
     // Geometry without the attribute (previews, portraits) reads the default 0.
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aMode;\nvarying float vMode;')
@@ -810,15 +810,21 @@ function makeMaterial(map: THREE.Texture, emissiveMap: THREE.Texture) {
         '#include <color_fragment>',
         `float mSel = 1.0 - step(0.5, abs(vMode - 1.0));
         float mLine = 1.0 - step(0.5, abs(vMode - 2.0));
-        float mDim = step(2.5, vMode);
+        // Exact match, not step(2.5, vMode): the tunnel mode (4) must not
+        // also read as dimmed, or tunnel cars would get two treatments.
+        float mDim = 1.0 - step(0.5, abs(vMode - 3.0));
         // Dimmed trains turn into pale gray toys so the focused line stands out.
         float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 0.55 + 0.25, mDim * 0.85);`,
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 0.55 + 0.25, mDim * 0.85);
+        // Tunnel cars: pale blue-gray ghost. Hue is dimmed, not replaced, so
+        // the line stays readable, and the car is never hidden.
+        float mTun = 1.0 - step(0.5, abs(vMode - 4.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 0.5 + vec3(0.15, 0.18, 0.25), mTun * 0.8);`,
       )
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        totalEmissiveRadiance *= max(uNight, uLk_trainGlow * 0.8) * 1.35 * (1.0 - 0.85 * mDim);
+        totalEmissiveRadiance *= max(uNight, uLk_trainGlow * 0.8) * 1.35 * (1.0 - 0.85 * mDim) * (1.0 - 0.7 * mTun);
         #ifdef USE_COLOR
           vec3 lineC = vColor.rgb;
         #else
@@ -831,7 +837,7 @@ function makeMaterial(map: THREE.Texture, emissiveMap: THREE.Texture) {
         totalEmissiveRadiance += (lineC * 0.7 + 0.3) * rim * hi * pulse * (0.9 + 1.8 * uNight);
         totalEmissiveRadiance += (diffuseColor.rgb * 0.8 + lineC * 0.25) * hi * (0.12 + 0.95 * uNight);
         // Glowing styles (neon): every train carries a soft line-colored light.
-        totalEmissiveRadiance += (lineC * 0.65 + 0.12) * uLk_trainGlow * (0.3 + 0.7 * rim) * (1.0 - 0.8 * mDim);`,
+        totalEmissiveRadiance += (lineC * 0.65 + 0.12) * uLk_trainGlow * (0.3 + 0.7 * rim) * (1.0 - 0.8 * mDim) * (1.0 - 0.7 * mTun);`,
       );
   };
   m.customProgramCacheKey = () => 'train-livery';
